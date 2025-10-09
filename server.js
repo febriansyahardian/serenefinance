@@ -3,19 +3,12 @@ const cors = require('cors');
 const bodyParser = require('body-parser');
 const path = require('path');
 const { v4: uuidv4 } = require('uuid');
-require('dotenv').config();
-const { createClient } = require('@supabase/supabase-js');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
-const SUPABASE_URL = process.env.SUPABASE_URL || 'https://ncqtnclxzbxxvtwwhwsl.supabase.co';
-const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
-const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5jcXRuY2x4emJ4eHZ0d3dod3NsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTk5NDQ1MjUsImV4cCI6MjA3NTUyMDUyNX0.JlFKwt41sdluIA21inhOVqoC_nPWxx49npzUHouAg7s';
-// Prefer service role if provided, else fall back to anon key
-const SUPABASE_KEY = SUPABASE_SERVICE_ROLE_KEY || SUPABASE_ANON_KEY;
-const supabase = SUPABASE_URL && SUPABASE_KEY
-  ? createClient(SUPABASE_URL, SUPABASE_KEY)
-  : null;
+// Supabase integration disabled
+const supabase = null;
+async function supabaseExec() { /* no-op */ }
 
 // Middleware
 app.use(cors());
@@ -73,22 +66,7 @@ app.post('/api/wishlists', (req, res) => {
     createdAt: new Date().toISOString()
   };
   wishlists.push(wishlist);
-  // fire-and-forget supabase insert
-  (async () => {
-    if (!supabase) return;
-    try {
-      await supabase.from('wishlists').insert({
-        id: wishlist.id,
-        name: wishlist.name,
-        price: wishlist.price,
-        description: wishlist.description,
-        created_at: wishlist.createdAt,
-        updated_at: wishlist.createdAt
-      });
-    } catch (e) {
-      console.error('Supabase insert wishlists failed', e);
-    }
-  })();
+  // supabase disabled
   res.status(201).json(wishlist);
 });
 
@@ -110,20 +88,7 @@ app.put('/api/wishlists/:id', (req, res) => {
   };
   
   res.json(wishlists[wishlistIndex]);
-  // fire-and-forget supabase update
-  (async () => {
-    if (!supabase) return;
-    try {
-      await supabase.from('wishlists').update({
-        name,
-        price: parseFloat(price),
-        description: description || '',
-        updated_at: new Date().toISOString()
-      }).eq('id', id);
-    } catch (e) {
-      console.error('Supabase update wishlists failed', e);
-    }
-  })();
+  // supabase disabled
 });
 
 app.delete('/api/wishlists/:id', (req, res) => {
@@ -139,15 +104,7 @@ app.delete('/api/wishlists/:id', (req, res) => {
   wishlists.splice(wishlistIndex, 1);
   
   res.status(204).send();
-  (async () => {
-    if (!supabase) return;
-    try {
-      await supabase.from('savings').delete().eq('wishlist_id', id);
-      await supabase.from('wishlists').delete().eq('id', id);
-    } catch (e) {
-      console.error('Supabase delete wishlist failed', e);
-    }
-  })();
+  // supabase disabled
 });
 
 // Savings
@@ -197,30 +154,7 @@ app.post('/api/savings', (req, res) => {
     createdAt: now
   });
   res.status(201).json(saving);
-  // fire-and-forget supabase inserts
-  (async () => {
-    if (!supabase) return;
-    try {
-      await supabase.from('savings').insert({
-        id: saving.id,
-        wishlist_id: wishlistId,
-        amount: parsedAmount,
-        description: note || '',
-        created_at: now
-      });
-      await supabase.from('money_entries').insert({
-        id: uuidv4(),
-        type: 'saving',
-        amount: parsedAmount,
-        description: note || '',
-        category: 'Saving',
-        created_at: now,
-        updated_at: now
-      });
-    } catch (e) {
-      console.error('Supabase insert saving/money_entry failed', e);
-    }
-  })();
+  // supabase disabled
 });
 
 app.delete('/api/savings/:id', (req, res) => {
@@ -233,14 +167,7 @@ app.delete('/api/savings/:id', (req, res) => {
   
   savings.splice(savingIndex, 1);
   res.status(204).send();
-  (async () => {
-    if (!supabase) return;
-    try {
-      await supabase.from('savings').delete().eq('id', id);
-    } catch (e) {
-      console.error('Supabase delete saving failed', e);
-    }
-  })();
+  // supabase disabled
 });
 
 // Savings history by wishlist
@@ -302,22 +229,7 @@ app.post('/api/money-entries', (req, res) => {
     note: entry.note,
     date: entry.date
   });
-  (async () => {
-    if (!supabase) return;
-    try {
-      await supabase.from('money_entries').insert({
-        id: entry.id,
-        type: entry.type,
-        amount: entry.amount,
-        description: entry.note || '',
-        category: entry.category || '',
-        created_at: entry.date,
-        updated_at: entry.date
-      });
-    } catch (e) {
-      console.error('Supabase insert money_entry failed', e);
-    }
-  })();
+  // supabase disabled
 });
 
 app.put('/api/money-entries/:id', (req, res) => {

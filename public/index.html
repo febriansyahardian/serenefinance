@@ -186,9 +186,12 @@
         <div id="wishlist-page" class="page hidden">
             <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
                 <div class="mb-8 animate-fade-in">
-                    <div class="flex items-center justify-between">
+                        <div class="flex items-center justify-between">
                         <div>
-                            <h1 class="text-3xl md:text-4xl font-light text-sage-800 mb-2">Your Wishlist</h1>
+                            <div class="flex items-baseline space-x-3">
+                                <h1 class="text-3xl md:text-4xl font-light text-sage-800 mb-2">Your Wishlist</h1>
+                                <span id="wishlist-total-amount" class="text-sage-500 text-sm">Total: Rp 0</span>
+                            </div>
                             <p class="text-sage-600 text-lg">Turn your dreams into achievable goals</p>
                         </div>
                         <button onclick="openAddWishlistModal()" class="btn-primary">
@@ -210,17 +213,22 @@
         <div id="money-history-page" class="page hidden">
             <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
                 <div class="mb-8 animate-fade-in">
-                    <div class="flex items-center justify-between">
+                        <div class="flex items-center justify-between">
                         <div>
                             <h1 class="text-3xl md:text-4xl font-light text-sage-800 mb-2">Money History</h1>
                             <p class="text-sage-600 text-lg">Track all your income and expense transactions</p>
                         </div>
-                        <button onclick="openAddMoneyModal()" class="btn-primary">
-                            <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"></path>
-                            </svg>
-                            Add Entry
-                        </button>
+                        <div class="flex items-center space-x-2">
+                            <button onclick="exportMoneyHistoryCSV()" class="btn-secondary">CSV</button>
+                            <button onclick="exportMoneyHistoryExcel()" class="btn-secondary">Excel</button>
+                            <button onclick="exportMoneyHistoryPDF()" class="btn-secondary">PDF</button>
+                            <button onclick="openAddMoneyModal()" class="btn-primary">
+                                <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"></path>
+                                </svg>
+                                Add Entry
+                            </button>
+                        </div>
                     </div>
                 </div>
 

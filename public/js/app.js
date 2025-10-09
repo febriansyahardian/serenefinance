@@ -112,7 +112,7 @@ function updateWishlistPreview(items) {
     }
     
     container.innerHTML = items.map(item => `
-        <div class="soft-card rounded-2xl p-4 hover:shadow-lg transition-all duration-200 cursor-pointer" onclick="openItemDetail('${item.id}')">
+        <div class="soft-card rounded-2xl p-4 hover:shadow-lg transition-all duration-200 cursor-pointer" onclick="showWishlistAndScroll('${item.id}')">
             <div class="flex items-center space-x-4 mb-3">
                 <div class="w-12 h-12 bg-gradient-to-br from-sage-100 to-sky-100 rounded-xl flex items-center justify-center flex-shrink-0">
                     ${item.image ? 
@@ -176,6 +176,11 @@ function updateWishlistGrid() {
         return;
     }
     
+    // tiny total amount in header
+    const total = wishlists.reduce((sum, w) => sum + (w.price || 0), 0);
+    const tiny = document.getElementById('wishlist-total-amount');
+    if (tiny) tiny.textContent = `Total: ${formatCurrency(total)}`;
+
     container.innerHTML = wishlists.map(item => `
         <div class="soft-card rounded-3xl p-6 hover:shadow-lg transition-all duration-200 cursor-pointer group" onclick="openItemDetail('${item.id}')">
             <div class="relative mb-6">
@@ -232,6 +237,19 @@ function updateWishlistGrid() {
             </div>
         </div>
     `).join('');
+}
+
+// Navigate from dashboard preview to wishlist and center clicked item
+function showWishlistAndScroll(wishlistId) {
+    showPage('wishlist');
+    // wait for grid to render
+    setTimeout(() => {
+        const cards = Array.from(document.querySelectorAll('#wishlist-grid > div'));
+        const target = cards.find(div => div.outerHTML.includes(`openItemDetail('${wishlistId}')`));
+        if (target) target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        // also open details for quick context
+        if (wishlistId) setTimeout(() => openItemDetail(wishlistId), 200);
+    }, 300);
 }
 
 // Modal Functions
@@ -815,6 +833,41 @@ function updateMoneyHistoryUI() {
             </div>
         </div>
     `).join('');
+}
+
+// Export helpers
+function toCSV(rows) {
+    const header = ['Type','Amount','Category','Note','Date'];
+    const data = rows.map(r => [r.type, r.amount, r.category || '', r.note || '', r.date || '']);
+    const all = [header, ...data];
+    return all.map(row => row.map(v => `"${String(v).replace(/"/g,'""')}"`).join(',')).join('\n');
+}
+
+function downloadBlob(content, filename, type) {
+    const blob = new Blob([content], { type });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = filename; a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+function exportMoneyHistoryCSV() {
+    const csv = toCSV(moneyEntries);
+    downloadBlob(csv, 'money-history.csv', 'text/csv;charset=utf-8;');
+}
+
+function exportMoneyHistoryExcel() {
+    const csv = toCSV(moneyEntries);
+    downloadBlob(csv, 'money-history.xls', 'application/vnd.ms-excel');
+}
+
+function exportMoneyHistoryPDF() {
+    const w = window.open('', '_blank');
+    const rows = moneyEntries.map(e => `<tr><td>${e.type}</td><td>${formatCurrency(e.amount)}</td><td>${e.category||''}</td><td>${e.note||''}</td><td>${formatDate(e.date)}</td></tr>`).join('');
+    w.document.write(`<!doctype html><html><head><title>Money History</title></head><body><h3>Money History</h3><table border="1" cellspacing="0" cellpadding="6"><thead><tr><th>Type</th><th>Amount</th><th>Category</th><th>Note</th><th>Date</th></tr></thead><tbody>${rows}</tbody></table></body></html>`);
+    w.document.close();
+    w.focus();
+    w.print();
 }
 
 function filterMoneyHistory() {

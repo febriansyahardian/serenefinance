@@ -1,174 +1,211 @@
-require('dotenv').config(); // Untuk membaca file .env di lokal
 const express = require('express');
 const cors = require('cors');
 const bodyParser = require('body-parser');
 const path = require('path');
 const { v4: uuidv4 } = require('uuid');
-const { createClient } = require('@supabase/supabase-js');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+// Supabase integration disabled
+const supabase = null;
+async function supabaseExec() { /* no-op */ }
 
-// Inisialisasi Supabase
-const supabaseUrl = process.env.SUPABASE_URL;
-const supabaseKey = process.env.SUPABASE_ANON_KEY;
-const supabase = createClient(supabaseUrl, supabaseKey);
-
+// Middleware
 app.use(cors());
 app.use(bodyParser.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
-// Helper: Membulatkan angka (menghindari bug desimal JS)
-const sanitizeAmount = (amount) => Math.round(parseFloat(amount) * 100) / 100;
+// In-memory storage (in production, use a database)
+let wishlists = [];
+let savings = [];
+let moneyEntries = [];
 
-// Helper: Kalkulasi sisa uang aktif dari DB
-const getAvailableMoney = async () => {
-  const { data, error } = await supabase.from('money_entries').select('type, amount');
-  if (error || !data) return 0;
-  
-  const totalIncome = data.filter(e => e.type === 'income').reduce((sum, e) => sum + e.amount, 0);
-  const totalExpenses = data.filter(e => e.type === 'expense').reduce((sum, e) => sum + e.amount, 0);
-  const totalSavings = data.filter(e => e.type === 'saving').reduce((sum, e) => sum + e.amount, 0);
-  
-  return sanitizeAmount(totalIncome - totalExpenses - totalSavings);
+// Helper functions
+const calculateWishlistProgress = (wishlistId) => {
+  const wishlistSavings = savings.filter(s => s.wishlistId === wishlistId);
+  const totalSaved = wishlistSavings.reduce((sum, saving) => sum + saving.amount, 0);
+  return totalSaved;
 };
 
-/* ================= ROUTES: WISHLIST ================= */
+const calculateTotalAvailableMoney = () => {
+  const totalIncome = moneyEntries
+    .filter(entry => entry.type === 'income')
+    .reduce((sum, entry) => sum + entry.amount, 0);
+  
+  const totalExpenses = moneyEntries
+    .filter(entry => entry.type === 'expense')
+    .reduce((sum, entry) => sum + entry.amount, 0);
+  
+  const totalSavings = moneyEntries
+    .filter(entry => entry.type === 'saving')
+    .reduce((sum, entry) => sum + entry.amount, 0);
+  
+  return totalIncome - totalExpenses - totalSavings;
+};
 
-app.get('/api/wishlists', async (req, res) => {
-  const { data: wishlists, error: wError } = await supabase.from('wishlists').select('*');
-  const { data: savings, error: sError } = await supabase.from('savings').select('wishlistId, amount');
-  
-  if (wError) return res.status(500).json({ error: wError.message });
-  
-  const wishlistsWithProgress = (wishlists || []).map(wishlist => {
-    const wishlistSavings = (savings || []).filter(s => s.wishlistId === wishlist.id);
-    const totalSaved = sanitizeAmount(wishlistSavings.reduce((sum, s) => sum + s.amount, 0));
-    
-    return {
-      ...wishlist,
-      totalSaved,
-      progress: Math.min((totalSaved / wishlist.price) * 100, 100)
-    };
-  });
-  
+// Routes
+
+// Wishlists
+app.get('/api/wishlists', (req, res) => {
+  const wishlistsWithProgress = wishlists.map(wishlist => ({
+    ...wishlist,
+    totalSaved: calculateWishlistProgress(wishlist.id),
+    progress: (calculateWishlistProgress(wishlist.id) / wishlist.price) * 100
+  }));
   res.json(wishlistsWithProgress);
 });
 
-app.post('/api/wishlists', async (req, res) => {
+app.post('/api/wishlists', (req, res) => {
   const { name, price, description, image } = req.body;
-  if (!name || isNaN(price) || price <= 0) return res.status(400).json({ error: 'Input tidak valid' });
-
   const wishlist = {
     id: uuidv4(),
-    name: name.trim(),
-    price: sanitizeAmount(price),
-    description: description ? description.trim() : '',
-    image: image ? image.trim() : '',
+    name,
+    price: parseFloat(price),
+    description: description || '',
+    image: image || '',
     createdAt: new Date().toISOString()
   };
-
-  const { data, error } = await supabase.from('wishlists').insert([wishlist]).select();
-  if (error) return res.status(500).json({ error: error.message });
-  res.status(201).json(data[0]);
+  wishlists.push(wishlist);
+  // supabase disabled
+  res.status(201).json(wishlist);
 });
 
-app.put('/api/wishlists/:id', async (req, res) => {
+app.put('/api/wishlists/:id', (req, res) => {
   const { id } = req.params;
   const { name, price, description, image } = req.body;
+  const wishlistIndex = wishlists.findIndex(w => w.id === id);
   
-  const { data, error } = await supabase.from('wishlists').update({
-    name: name.trim(),
-    price: sanitizeAmount(price),
-    description: description ? description.trim() : '',
-    image: image ? image.trim() : ''
-  }).eq('id', id).select();
-
-  if (error) return res.status(500).json({ error: error.message });
-  res.json(data[0]);
+  if (wishlistIndex === -1) {
+    return res.status(404).json({ error: 'Wishlist not found' });
+  }
+  
+  wishlists[wishlistIndex] = {
+    ...wishlists[wishlistIndex],
+    name,
+    price: parseFloat(price),
+    description: description || '',
+    image: image || ''
+  };
+  
+  res.json(wishlists[wishlistIndex]);
+  // supabase disabled
 });
 
-app.delete('/api/wishlists/:id', async (req, res) => {
+app.delete('/api/wishlists/:id', (req, res) => {
   const { id } = req.params;
-  await supabase.from('savings').delete().eq('wishlistId', id); // Hapus relasi tabungan
-  const { error } = await supabase.from('wishlists').delete().eq('id', id);
+  const wishlistIndex = wishlists.findIndex(w => w.id === id);
   
-  if (error) return res.status(500).json({ error: error.message });
+  if (wishlistIndex === -1) {
+    return res.status(404).json({ error: 'Wishlist not found' });
+  }
+  
+  // Remove associated savings
+  savings = savings.filter(s => s.wishlistId !== id);
+  wishlists.splice(wishlistIndex, 1);
+  
   res.status(204).send();
+  // supabase disabled
 });
 
-/* ================= ROUTES: SAVINGS ================= */
-
-app.get('/api/savings', async (req, res) => {
-  const { data, error } = await supabase.from('savings').select('*');
-  if (error) return res.status(500).json({ error: error.message });
-  res.json(data);
+// Savings
+app.get('/api/savings', (req, res) => {
+  res.json(savings);
 });
 
-app.post('/api/savings', async (req, res) => {
+app.post('/api/savings', (req, res) => {
   const { wishlistId, amount, note } = req.body;
-  const parsedAmount = sanitizeAmount(amount);
+  const parsedAmount = parseFloat(amount);
 
-  if (isNaN(parsedAmount) || parsedAmount <= 0) return res.status(400).json({ error: 'Jumlah tidak valid' });
+  // Validate wishlist exists
+  const wishlist = wishlists.find(w => w.id === wishlistId);
+  if (!wishlist) {
+    return res.status(400).json({ error: 'Wishlist not found' });
+  }
 
-  const { data: wishlist } = await supabase.from('wishlists').select('id, name').eq('id', wishlistId).single();
-  if (!wishlist) return res.status(404).json({ error: 'Wishlist tidak ditemukan' });
-
-  const available = await getAvailableMoney();
+  // Funds validation against available money
+  const available = calculateTotalAvailableMoney();
   if (parsedAmount > available) {
-    return res.status(400).json({ error: 'Dana tidak mencukupi', available, requested: parsedAmount });
+    return res.status(400).json({ error: 'Insufficient funds for saving', available, requested: parsedAmount });
   }
 
   const now = new Date().toISOString();
-  
-  const savingEntry = {
+  const saving = {
     id: uuidv4(),
     wishlistId,
     amount: parsedAmount,
-    note: note ? note.trim() : '',
+    note: note || '',
     date: now,
+    // keep legacy fields for compatibility
+    description: note || '',
     createdAt: now
   };
+  savings.push(saving);
 
-  const moneyEntry = {
+  // Also record as a money entry of type 'saving' so history and available funds align
+  moneyEntries.push({
     id: uuidv4(),
     type: 'saving',
     amount: parsedAmount,
     category: 'Saving',
-    note: note ? note.trim() : `Saving for ${wishlist.name}`,
+    note: note || '',
     date: now,
+    // legacy fields
+    description: note || '',
     createdAt: now
-  };
-
-  // Simpan ke dua tabel secara paralel
-  await Promise.all([
-    supabase.from('savings').insert([savingEntry]),
-    supabase.from('money_entries').insert([moneyEntry])
-  ]);
-
-  res.status(201).json(savingEntry);
+  });
+  res.status(201).json(saving);
+  // supabase disabled
 });
 
-/* ================= ROUTES: MONEY ENTRIES ================= */
-
-app.get('/api/money-entries', async (req, res) => {
-  const { data, error } = await supabase.from('money_entries').select('*');
-  if (error) return res.status(500).json({ error: error.message });
-  res.json(data);
+app.delete('/api/savings/:id', (req, res) => {
+  const { id } = req.params;
+  const savingIndex = savings.findIndex(s => s.id === id);
+  
+  if (savingIndex === -1) {
+    return res.status(404).json({ error: 'Saving not found' });
+  }
+  
+  savings.splice(savingIndex, 1);
+  res.status(204).send();
+  // supabase disabled
 });
 
-app.post('/api/money-entries', async (req, res) => {
+// Savings history by wishlist
+app.get('/api/savings/wishlist/:wishlistId', (req, res) => {
+  const { wishlistId } = req.params;
+  const result = savings
+    .filter(s => s.wishlistId === wishlistId)
+    .map(s => ({ id: s.id, amount: s.amount, note: s.note || s.description || '', date: s.date || s.createdAt }));
+  res.json(result);
+});
+
+// Money Entries
+app.get('/api/money-entries', (req, res) => {
+  // Ensure responses include note/date for frontend
+  const result = moneyEntries.map(e => ({
+    id: e.id,
+    type: e.type,
+    amount: e.amount,
+    category: e.category || '',
+    note: e.note || e.description || '',
+    date: e.date || e.createdAt
+  }));
+  res.json(result);
+});
+
+app.post('/api/money-entries', (req, res) => {
   const { type, amount, note, description, category, date } = req.body;
-  const parsedAmount = sanitizeAmount(amount);
+  const parsedAmount = parseFloat(amount);
 
-  if (!['income', 'expense'].includes(type) || isNaN(parsedAmount) || parsedAmount <= 0) {
-    return res.status(400).json({ error: 'Input transaksi tidak valid' });
+  if (!type || !parsedAmount || parsedAmount <= 0) {
+    return res.status(400).json({ error: 'Invalid entry' });
   }
 
+  // Funds validation for expenses
   if (type === 'expense') {
-    const available = await getAvailableMoney();
+    const available = calculateTotalAvailableMoney();
     if (parsedAmount > available) {
-      return res.status(400).json({ error: 'Dana tidak mencukupi', available, requested: parsedAmount });
+      return res.status(400).json({ error: 'Insufficient funds', available, requested: parsedAmount });
     }
   }
 
@@ -176,47 +213,93 @@ app.post('/api/money-entries', async (req, res) => {
     id: uuidv4(),
     type,
     amount: parsedAmount,
-    category: category ? category.trim() : 'Other',
-    note: (note || description || '').trim(),
+    category: category || '',
+    note: note || description || '',
     date: date || new Date().toISOString(),
-    createdAt: new Date().toISOString()
+    // legacy fields
+    description: note || description || '',
+    createdAt: date || new Date().toISOString()
   };
-  
-  const { data, error } = await supabase.from('money_entries').insert([entry]).select();
-  if (error) return res.status(500).json({ error: error.message });
-  res.status(201).json(data[0]);
+  moneyEntries.push(entry);
+  res.status(201).json({
+    id: entry.id,
+    type: entry.type,
+    amount: entry.amount,
+    category: entry.category,
+    note: entry.note,
+    date: entry.date
+  });
+  // supabase disabled
 });
 
-app.delete('/api/money-entries/:id', async (req, res) => {
-  const { error } = await supabase.from('money_entries').delete().eq('id', req.params.id);
-  if (error) return res.status(500).json({ error: error.message });
+app.put('/api/money-entries/:id', (req, res) => {
+  const { id } = req.params;
+  const { type, amount, description, category } = req.body;
+  const entryIndex = moneyEntries.findIndex(e => e.id === id);
+  
+  if (entryIndex === -1) {
+    return res.status(404).json({ error: 'Entry not found' });
+  }
+  
+  moneyEntries[entryIndex] = {
+    ...moneyEntries[entryIndex],
+    type,
+    amount: parseFloat(amount),
+    description: description || '',
+    category: category || ''
+  };
+  
+  res.json(moneyEntries[entryIndex]);
+});
+
+app.delete('/api/money-entries/:id', (req, res) => {
+  const { id } = req.params;
+  const entryIndex = moneyEntries.findIndex(e => e.id === id);
+  
+  if (entryIndex === -1) {
+    return res.status(404).json({ error: 'Entry not found' });
+  }
+  
+  moneyEntries.splice(entryIndex, 1);
   res.status(204).send();
 });
 
-/* ================= ROUTES: DASHBOARD ================= */
-
-app.get('/api/dashboard', async (req, res) => {
-  const availableMoney = await getAvailableMoney();
+// Dashboard
+app.get('/api/dashboard', (req, res) => {
+  const totalWishlistValue = wishlists.reduce((sum, w) => sum + w.price, 0);
+  const totalSaved = savings.reduce((sum, s) => sum + s.amount, 0);
+  const availableMoney = calculateTotalAvailableMoney();
   
-  const { data: entries } = await supabase.from('money_entries').select('*');
-  const { data: savingsData } = await supabase.from('savings').select('amount');
+  const totalIncome = moneyEntries
+    .filter(entry => entry.type === 'income')
+    .reduce((sum, entry) => sum + entry.amount, 0);
   
-  const totalIncome = sanitizeAmount((entries || []).filter(e => e.type === 'income').reduce((sum, e) => sum + e.amount, 0));
-  const totalExpenses = sanitizeAmount((entries || []).filter(e => e.type === 'expense').reduce((sum, e) => sum + e.amount, 0));
-  const totalSaved = sanitizeAmount((savingsData || []).reduce((sum, s) => sum + s.amount, 0));
-
+  const totalExpenses = moneyEntries
+    .filter(entry => entry.type === 'expense')
+    .reduce((sum, entry) => sum + entry.amount, 0);
+  
+  const wishlistsWithProgress = wishlists.map(wishlist => ({
+    ...wishlist,
+    totalSaved: calculateWishlistProgress(wishlist.id),
+    progress: (calculateWishlistProgress(wishlist.id) / wishlist.price) * 100
+  }));
+  
   res.json({
+    wishlists: wishlistsWithProgress,
+    totalWishlistValue,
+    totalSaved,
     availableMoney,
     totalIncome,
     totalExpenses,
-    totalSaved,
-    moneyEntries: (entries || []).slice(-10) // 10 transaksi terakhir
+    moneyEntries: moneyEntries.slice(-10) // Last 10 entries
   });
 });
 
+// Serve the main page
 app.get('/', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
 app.listen(PORT, () => {
-  console.log
+  console.log(`Server running on http://localhost:${PORT}`);
+});
